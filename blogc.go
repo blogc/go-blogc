@@ -17,31 +17,28 @@ func Version() (string, error) {
 }
 
 type blogcBase struct {
-	OutputFile  string
-	Definitions []string
+	outputFile  string
+	definitions []string
 	inputFiles  []string
 	listing     bool
 }
 
 type Entry struct {
 	blogcBase
-	InputFile string
 }
 
 type Listing struct {
 	blogcBase
-	InputFiles []string
 }
 
 func NewEntry(inputFile string, outputFile string, definitions []string) (*Entry, error) {
 	rv := &Entry{
 		blogcBase: blogcBase{
-			OutputFile:  outputFile,
-			Definitions: definitions,
+			outputFile:  outputFile,
+			definitions: definitions,
 			inputFiles:  []string{inputFile},
 			listing:     false,
 		},
-		InputFile: inputFile,
 	}
 	if err := rv.validate(); err != nil {
 		return nil, err
@@ -52,12 +49,11 @@ func NewEntry(inputFile string, outputFile string, definitions []string) (*Entry
 func NewListing(inputFiles []string, outputFile string, definitions []string) (*Listing, error) {
 	rv := &Listing{
 		blogcBase: blogcBase{
-			OutputFile:  outputFile,
-			Definitions: definitions,
+			outputFile:  outputFile,
+			definitions: definitions,
 			inputFiles:  inputFiles,
 			listing:     true,
 		},
-		InputFiles: inputFiles,
 	}
 	if err := rv.validate(); err != nil {
 		return nil, err
@@ -76,7 +72,7 @@ func (e *blogcBase) validate() error {
 		}
 	}
 
-	if e.OutputFile == "" {
+	if e.outputFile == "" {
 		return fmt.Errorf("blogc: output file is required")
 	}
 
@@ -92,12 +88,12 @@ func (e *blogcBase) generateCommand(templateFile string, printVar string) []stri
 		rv = append(rv, e.inputFiles[0])
 	}
 
-	for _, v := range e.Definitions {
+	for _, v := range e.definitions {
 		rv = append(rv, "-D", v)
 	}
 
 	if templateFile != "" {
-		rv = append(rv, "-o", e.OutputFile, "-t", templateFile)
+		rv = append(rv, "-o", e.outputFile, "-t", templateFile)
 	} else if printVar != "" {
 		rv = append(rv, "-p", printVar)
 	}
@@ -129,7 +125,7 @@ func (e *blogcBase) Build(templateFile string) error {
 	return nil
 }
 
-func (e *blogcBase) GetVariable(name string) (string, error) {
+func (e *Listing) GetVariable(name string) (string, error) {
 	cmdArgs := e.generateCommand("", name)
 	statusCode, stdout, stderr, err := blogcRun(e.generateStdin(), cmdArgs...)
 	if err != nil {
