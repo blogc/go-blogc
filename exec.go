@@ -1,15 +1,11 @@
 package blogc
 
 import (
-	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
-	"strings"
 	"syscall"
-
-	"github.com/hashicorp/go-version"
 )
 
 const (
@@ -39,27 +35,8 @@ func init() {
 	}
 
 	// check binary version
-	vStr, err := Version()
-	if err != nil {
+	if err := RequiredVersion(blogcRequiredVersion); err != nil {
 		panic(err)
-	}
-	pieces := strings.Split(vStr, " ")
-	if len(pieces) != 2 {
-		panic(fmt.Sprintf("blogc: malformed version reported by %q binary: %s", blogcBin, vStr))
-	}
-
-	v, err := version.NewVersion(pieces[1])
-	if err != nil {
-		panic(err)
-	}
-
-	r, err := version.NewVersion(blogcRequiredVersion)
-	if err != nil {
-		panic(err)
-	}
-
-	if c := r.Compare(v); c > 0 {
-		panic(fmt.Sprintf("blogc: version %q or greater required, got %q", blogcRequiredVersion, pieces[1]))
 	}
 }
 

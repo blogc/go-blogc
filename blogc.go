@@ -3,7 +3,10 @@ package blogc
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
+
+	"github.com/hashicorp/go-version"
 )
 
 func Version() (string, error) {
@@ -14,6 +17,39 @@ func Version() (string, error) {
 	}
 
 	return strings.TrimSpace(string(out)), nil
+}
+
+func RequiredVersion(v string) error {
+	vStr, err := Version()
+	if err != nil {
+		return err
+	}
+
+	vErr := fmt.Errorf("blogc: malformed version reported by %q binary: %s", blogcBin, vStr)
+
+	pieces := strings.Split(vStr, " ")
+	if len(pieces) != 2 {
+		return vErr
+	}
+	if pieces[0] != "blogc" {
+		return vErr
+	}
+
+	actualVersion, err := version.NewVersion(pieces[1])
+	if err != nil {
+		return err
+	}
+
+	reqVersion, err := version.NewVersion(v)
+	if err != nil {
+		return err
+	}
+
+	if c := reqVersion.Compare(actualVersion); c > 0 {
+		return fmt.Errorf("blogc: version %q or greater required, got %q", v, pieces[1])
+	}
+
+	return nil
 }
 
 type blogcBase struct {
@@ -59,6 +95,29 @@ func NewListing(inputFiles []string, outputFile string, definitions []string) (*
 		return nil, err
 	}
 	return rv, nil
+}
+
+func (e *blogcBase) NeedsBuild() bool {
+	st, err := os.Stat(e.outputFile)
+	if err != nil {
+		return true
+	}
+	mtime := st.ModTime()
+
+	for _, f := range e.inputFiles {
+		st, err := os.Stat(f)
+		if err != nil {
+			// file not found. recomend a new build, so blogc can generate
+			// useful error message
+			return true
+		}
+
+		if mtime.Before(st.ModTime()) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (e *blogcBase) validate() error {
@@ -112,6 +171,10 @@ func (e *blogcBase) generateStdin() string {
 }
 
 func (e *blogcBase) Build(templateFile string) error {
+	if templateFile == "" {
+		return fmt.Errorf("blogc: template file is required")
+	}
+
 	cmdArgs := e.generateCommand(templateFile, "")
 	statusCode, _, stderr, err := blogcRun(e.generateStdin(), cmdArgs...)
 	if err != nil {
@@ -126,6 +189,10 @@ func (e *blogcBase) Build(templateFile string) error {
 }
 
 func (e *Listing) GetVariable(name string) (string, error) {
+	if name == "" {
+		return "", fmt.Errorf("blogc: variable name is required")
+	}
+
 	cmdArgs := e.generateCommand("", name)
 	statusCode, stdout, stderr, err := blogcRun(e.generateStdin(), cmdArgs...)
 	if err != nil {
