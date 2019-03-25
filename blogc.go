@@ -53,10 +53,10 @@ func RequiredVersion(v string) error {
 }
 
 type blogcBase struct {
-	outputFile  string
-	definitions []string
-	inputFiles  []string
 	listing     bool
+	definitions []string
+	inputFiles  []File
+	outputFile  File
 }
 
 type Entry struct {
@@ -67,12 +67,12 @@ type Listing struct {
 	blogcBase
 }
 
-func NewEntry(inputFile string, outputFile string, definitions []string) (*Entry, error) {
+func NewEntry(inputFile File, outputFile File, definitions []string) (*Entry, error) {
 	rv := &Entry{
 		blogcBase: blogcBase{
 			outputFile:  outputFile,
 			definitions: definitions,
-			inputFiles:  []string{inputFile},
+			inputFiles:  []File{inputFile},
 			listing:     false,
 		},
 	}
@@ -82,7 +82,7 @@ func NewEntry(inputFile string, outputFile string, definitions []string) (*Entry
 	return rv, nil
 }
 
-func NewListing(inputFiles []string, outputFile string, definitions []string) (*Listing, error) {
+func NewListing(inputFiles []File, outputFile File, definitions []string) (*Listing, error) {
 	rv := &Listing{
 		blogcBase: blogcBase{
 			outputFile:  outputFile,
@@ -98,14 +98,14 @@ func NewListing(inputFiles []string, outputFile string, definitions []string) (*
 }
 
 func (e *blogcBase) NeedsBuild() bool {
-	st, err := os.Stat(e.outputFile)
+	st, err := os.Stat(e.outputFile.Path())
 	if err != nil {
 		return true
 	}
 	mtime := st.ModTime()
 
 	for _, f := range e.inputFiles {
-		st, err := os.Stat(f)
+		st, err := os.Stat(f.Path())
 		if err != nil {
 			// file not found. recomend a new build, so blogc can generate
 			// useful error message
@@ -126,33 +126,33 @@ func (e *blogcBase) validate() error {
 			return fmt.Errorf("blogc: at least one input file is required")
 		}
 	} else {
-		if len(e.inputFiles) != 1 || e.inputFiles[0] == "" {
+		if len(e.inputFiles) != 1 {
 			return fmt.Errorf("blogc: input file is required")
 		}
 	}
 
-	if e.outputFile == "" {
+	if e.outputFile == nil {
 		return fmt.Errorf("blogc: output file is required")
 	}
 
 	return nil
 }
 
-func (e *blogcBase) generateCommand(templateFile string, printVar string) []string {
+func (e *blogcBase) generateCommand(templateFile File, printVar string) []string {
 	rv := []string{}
 
 	if e.listing {
 		rv = append(rv, "-l", "-i")
 	} else {
-		rv = append(rv, e.inputFiles[0])
+		rv = append(rv, e.inputFiles[0].Path())
 	}
 
 	for _, v := range e.definitions {
 		rv = append(rv, "-D", v)
 	}
 
-	if templateFile != "" {
-		rv = append(rv, "-o", e.outputFile, "-t", templateFile)
+	if templateFile != nil {
+		rv = append(rv, "-o", e.outputFile.Path(), "-t", templateFile.Path())
 	} else if printVar != "" {
 		rv = append(rv, "-p", printVar)
 	}
@@ -164,14 +164,14 @@ func (e *blogcBase) generateStdin() string {
 	rv := ""
 	if e.listing {
 		for _, v := range e.inputFiles {
-			rv += fmt.Sprintf("%s\n", v)
+			rv += fmt.Sprintf("%s\n", v.Path())
 		}
 	}
 	return rv
 }
 
-func (e *blogcBase) Build(templateFile string) error {
-	if templateFile == "" {
+func (e *blogcBase) Build(templateFile File) error {
+	if templateFile == nil {
 		return fmt.Errorf("blogc: template file is required")
 	}
 
@@ -193,7 +193,7 @@ func (e *Listing) GetVariable(name string) (string, error) {
 		return "", fmt.Errorf("blogc: variable name is required")
 	}
 
-	cmdArgs := e.generateCommand("", name)
+	cmdArgs := e.generateCommand(nil, name)
 	statusCode, stdout, stderr, err := blogcRun(e.generateStdin(), cmdArgs...)
 	if err != nil {
 		return "", err
