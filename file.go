@@ -7,12 +7,17 @@ import (
 
 type File interface {
 	Path() string
+	Close() error
 }
 
 type FilePath string
 
 func (f FilePath) Path() string {
 	return string(f)
+}
+
+func (f FilePath) Close() error {
+	return nil
 }
 
 type FileBytes struct {
@@ -50,6 +55,6 @@ func (f *FileBytes) Read() ([]byte, error) {
 	return ioutil.ReadFile(f.path)
 }
 
-func (f *FileBytes) Close() {
-	os.Remove(f.path)
+func (f *FileBytes) Close() error {
+	return os.Remove(f.path)
 }
