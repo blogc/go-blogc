@@ -5,15 +5,19 @@ import (
 	"testing"
 )
 
-var v = regexp.MustCompile(`^blogc [0-9a-f-.]+(-dirty)?$`)
+var (
+	v  = regexp.MustCompile(`^[0-9a-f-.]+(-dirty)?$`)
+	pv = regexp.MustCompile(`^blogc [0-9a-f-.]+(-dirty)?$`)
+)
 
 func TestVersion(t *testing.T) {
-	s, err := Version()
-	if err != nil {
-		t.Errorf("Version failed: %v", err)
+	if !v.MatchString(Version) {
+		t.Errorf("Version failed: version not found: %s", Version)
 	}
+}
 
-	if !v.MatchString(s) {
-		t.Errorf("Version failed: version not found: %s", s)
+func TestPackageVersion(t *testing.T) {
+	if !pv.MatchString(PackageVersion) {
+		t.Errorf("PackageVersion failed: version not found: %s", PackageVersion)
 	}
 }

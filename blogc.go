@@ -9,33 +9,8 @@ import (
 	"github.com/hashicorp/go-version"
 )
 
-func Version() (string, error) {
-	c := blogcCmd("-v")
-	out, err := c.CombinedOutput()
-	if err != nil {
-		return "", err
-	}
-
-	return strings.TrimSpace(string(out)), nil
-}
-
 func RequiredVersion(v string) error {
-	vStr, err := Version()
-	if err != nil {
-		return err
-	}
-
-	vErr := fmt.Errorf("blogc: malformed version reported by %q binary: %s", blogcBin, vStr)
-
-	pieces := strings.Split(vStr, " ")
-	if len(pieces) != 2 {
-		return vErr
-	}
-	if pieces[0] != "blogc" {
-		return vErr
-	}
-
-	actualVersion, err := version.NewVersion(pieces[1])
+	actualVersion, err := version.NewVersion(Version)
 	if err != nil {
 		return err
 	}
@@ -45,66 +20,38 @@ func RequiredVersion(v string) error {
 		return err
 	}
 
-	if c := reqVersion.Compare(actualVersion); c > 0 {
-		return fmt.Errorf("blogc: version %q or greater required, got %q", v, pieces[1])
+	if reqVersion.Compare(actualVersion) > 0 {
+		return fmt.Errorf("blogc: version %q or greater required, got %q", v, Version)
 	}
 
 	return nil
 }
 
-type blogcBase struct {
-	listing     bool
-	definitions []string
-	inputFiles  []File
-	outputFile  File
+type BuildContext struct {
+	Listing          bool
+	GlobalVariables  []string
+	InputFiles       []File
+	ListingEntryFile File
+	OutputFile       File
+	TemplateFile     File
 }
 
-type Entry struct {
-	blogcBase
-}
-
-type Listing struct {
-	blogcBase
-}
-
-func NewEntry(inputFile File, outputFile File, definitions []string) (*Entry, error) {
-	rv := &Entry{
-		blogcBase: blogcBase{
-			outputFile:  outputFile,
-			definitions: definitions,
-			inputFiles:  []File{inputFile},
-			listing:     false,
-		},
-	}
-	if err := rv.validate(); err != nil {
-		return nil, err
-	}
-	return rv, nil
-}
-
-func NewListing(inputFiles []File, outputFile File, definitions []string) (*Listing, error) {
-	rv := &Listing{
-		blogcBase: blogcBase{
-			outputFile:  outputFile,
-			definitions: definitions,
-			inputFiles:  inputFiles,
-			listing:     true,
-		},
-	}
-	if err := rv.validate(); err != nil {
-		return nil, err
-	}
-	return rv, nil
-}
-
-func (e *blogcBase) NeedsBuild() bool {
-	st, err := os.Stat(e.outputFile.Path())
+func (e *BuildContext) NeedsBuild() bool {
+	st, err := os.Stat(e.OutputFile.Path())
 	if err != nil {
 		return true
 	}
 	mtime := st.ModTime()
 
-	for _, f := range e.inputFiles {
+	files := e.InputFiles
+	if e.TemplateFile != nil {
+		files = append(files, e.TemplateFile)
+	}
+	if e.Listing && e.ListingEntryFile != nil {
+		files = append(files, e.ListingEntryFile)
+	}
+
+	for _, f := range files {
 		st, err := os.Stat(f.Path())
 		if err != nil {
 			// file not found. recomend a new build, so blogc can generate
@@ -120,62 +67,71 @@ func (e *blogcBase) NeedsBuild() bool {
 	return false
 }
 
-func (e *blogcBase) validate() error {
-	if e.listing {
-		if len(e.inputFiles) == 0 {
-			return fmt.Errorf("blogc: at least one input file is required")
-		}
-	} else {
-		if len(e.inputFiles) != 1 {
-			return fmt.Errorf("blogc: input file is required")
-		}
-	}
-
-	if e.outputFile == nil {
-		return fmt.Errorf("blogc: output file is required")
-	}
-
-	return nil
-}
-
-func (e *blogcBase) generateCommand(templateFile File, printVar string) []string {
+func (e *BuildContext) generateCommand(printVar string) []string {
 	rv := []string{}
 
-	if e.listing {
+	if e.Listing {
 		rv = append(rv, "-l", "-i")
+		if e.ListingEntryFile != nil {
+			rv = append(rv, "-e", e.ListingEntryFile.Path())
+		}
 	} else {
-		rv = append(rv, e.inputFiles[0].Path())
+		rv = append(rv, e.InputFiles[0].Path())
 	}
 
-	for _, v := range e.definitions {
+	for _, v := range e.GlobalVariables {
 		rv = append(rv, "-D", v)
 	}
 
-	if templateFile != nil {
-		rv = append(rv, "-o", e.outputFile.Path(), "-t", templateFile.Path())
-	} else if printVar != "" {
+	if printVar != "" {
 		rv = append(rv, "-p", printVar)
+	} else if e.OutputFile != nil && e.TemplateFile != nil {
+		rv = append(rv, "-o", e.OutputFile.Path(), "-t", e.TemplateFile.Path())
 	}
 
 	return rv
 }
 
-func (e *blogcBase) generateStdin() string {
+func (e *BuildContext) generateStdin() string {
 	rv := ""
-	if e.listing {
-		for _, v := range e.inputFiles {
+	if e.Listing {
+		for _, v := range e.InputFiles {
 			rv += fmt.Sprintf("%s\n", v.Path())
 		}
 	}
 	return rv
 }
 
-func (e *blogcBase) Build(templateFile File) error {
-	if templateFile == nil {
+func (e *BuildContext) validateInputFiles() error {
+	if e.Listing {
+		if len(e.InputFiles) == 0 {
+			return fmt.Errorf("blogc: at least one input file is required")
+		}
+	} else {
+		if len(e.InputFiles) != 1 {
+			return fmt.Errorf("blogc: one input file is required")
+		}
+		if e.ListingEntryFile != nil {
+			return fmt.Errorf("blogc: listing entry is only supported by listing mode")
+		}
+	}
+	return nil
+}
+
+func (e *BuildContext) Build() error {
+	if err := e.validateInputFiles(); err != nil {
+		return err
+	}
+
+	if e.OutputFile == nil {
+		return fmt.Errorf("blogc: output file is required")
+	}
+
+	if e.TemplateFile == nil {
 		return fmt.Errorf("blogc: template file is required")
 	}
 
-	cmdArgs := e.generateCommand(templateFile, "")
+	cmdArgs := e.generateCommand("")
 	statusCode, _, stderr, err := blogcRun(e.generateStdin(), cmdArgs...)
 	if err != nil {
 		return err
@@ -188,26 +144,33 @@ func (e *blogcBase) Build(templateFile File) error {
 	return nil
 }
 
-func (e *Listing) GetVariable(name string) (string, error) {
+func (e *BuildContext) GetEvaluatedVariable(name string) (string, bool, error) {
 	if name == "" {
-		return "", fmt.Errorf("blogc: variable name is required")
+		return "", false, fmt.Errorf("blogc: variable name is required")
 	}
 
-	cmdArgs := e.generateCommand(nil, name)
+	if err := e.validateInputFiles(); err != nil {
+		return "", false, err
+	}
+
+	cmdArgs := e.generateCommand(name)
 	statusCode, stdout, stderr, err := blogcRun(e.generateStdin(), cmdArgs...)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 
 	if statusCode != 0 {
-		return "", errors.New(strings.TrimSpace(stderr))
+		if statusCode == 78 { // EX_CONFIG, as of blogc-0.15.2, that is our minimum version
+			return "", false, nil
+		}
+		return "", false, errors.New(strings.TrimSpace(stderr))
 	}
 
 	// remove the last newline, introduced by blogc itself.
 	// we don't want to remove any whitespace that is part of the variable.
 	if stdout[len(stdout)-1] == byte('\n') {
-		return string(stdout[:len(stdout)-1]), nil
+		return string(stdout[:len(stdout)-1]), true, nil
 	}
 
-	return stdout, nil
+	return stdout, true, nil
 }
