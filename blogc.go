@@ -37,6 +37,13 @@ type BuildContext struct {
 }
 
 func (e *BuildContext) NeedsBuild() bool {
+	if e.OutputFile == nil {
+		return false
+	}
+	if e.OutputFile.IsTempFile() {
+		return true
+	}
+
 	st, err := os.Stat(e.OutputFile.Path())
 	if err != nil {
 		return true
@@ -51,8 +58,22 @@ func (e *BuildContext) NeedsBuild() bool {
 		files = append(files, e.ListingEntryFile)
 	}
 
+	selfPath := ""
+	if len(os.Args) > 0 {
+		selfPath = os.Args[0]
+	}
+
+	selfInjected := false
 	for _, f := range files {
-		st, err := os.Stat(f.Path())
+		path := f.Path()
+		if f.IsTempFile() && selfPath != "" {
+			if selfInjected {
+				continue
+			}
+			path = selfPath
+			selfInjected = true
+		}
+		st, err := os.Stat(path)
 		if err != nil {
 			// file not found. recomend a new build, so blogc can generate
 			// useful error message

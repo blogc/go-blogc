@@ -8,6 +8,7 @@ import (
 type File interface {
 	Path() string
 	Close() error
+	IsTempFile() bool
 }
 
 type FilePath string
@@ -18,6 +19,10 @@ func (f FilePath) Path() string {
 
 func (f FilePath) Close() error {
 	return nil
+}
+
+func (f FilePath) IsTempFile() bool {
+	return false
 }
 
 type FileBytes struct {
@@ -57,4 +62,8 @@ func (f *FileBytes) Read() ([]byte, error) {
 
 func (f *FileBytes) Close() error {
 	return os.Remove(f.path)
+}
+
+func (f *FileBytes) IsTempFile() bool {
+	return true
 }
