@@ -27,36 +27,19 @@ func RequiredVersion(v string) error {
 	return nil
 }
 
-type BuildContext struct {
-	Listing          bool
-	GlobalVariables  []string
-	InputFiles       []File
-	ListingEntryFile File
-	OutputFile       File
-	TemplateFile     File
-}
-
-func (e *BuildContext) NeedsBuild() bool {
-	if e.OutputFile == nil {
+func OutputIsOutdated(inputFiles []File, outputFile File) bool {
+	if outputFile == nil {
 		return false
 	}
-	if e.OutputFile.IsTempFile() {
+	if outputFile.IsTempFile() {
 		return true
 	}
 
-	st, err := os.Stat(e.OutputFile.Path())
+	st, err := os.Stat(outputFile.Path())
 	if err != nil {
 		return true
 	}
 	mtime := st.ModTime()
-
-	files := e.InputFiles
-	if e.TemplateFile != nil {
-		files = append(files, e.TemplateFile)
-	}
-	if e.Listing && e.ListingEntryFile != nil {
-		files = append(files, e.ListingEntryFile)
-	}
 
 	selfPath := ""
 	if len(os.Args) > 0 {
@@ -64,7 +47,7 @@ func (e *BuildContext) NeedsBuild() bool {
 	}
 
 	selfInjected := false
-	for _, f := range files {
+	for _, f := range inputFiles {
 		path := f.Path()
 		if f.IsTempFile() && selfPath != "" {
 			if selfInjected {
@@ -86,6 +69,29 @@ func (e *BuildContext) NeedsBuild() bool {
 	}
 
 	return false
+}
+
+type BuildContext struct {
+	Listing          bool
+	GlobalVariables  []string
+	InputFiles       []File
+	ListingEntryFile File
+	OutputFile       File
+	TemplateFile     File
+}
+
+func (e *BuildContext) NeedsBuild() bool {
+	inputFiles := e.InputFiles
+
+	if e.TemplateFile != nil {
+		inputFiles = append(inputFiles, e.TemplateFile)
+	}
+
+	if e.Listing && e.ListingEntryFile != nil {
+		inputFiles = append(inputFiles, e.ListingEntryFile)
+	}
+
+	return OutputIsOutdated(inputFiles, e.OutputFile)
 }
 
 func (e *BuildContext) generateCommand(printVar string) []string {
